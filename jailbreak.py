@@ -4,6 +4,7 @@ import tempfile
 import shutil
 import argparse
 import os
+
 parser = argparse.ArgumentParser("Exports a single directory within the project to a seperate repository")
 parser.add_argument("dir", help="The directory to be exported to a seperate repo", )
 args = parser.parse_args()
@@ -17,21 +18,25 @@ remotes = commandResult.stdout.splitlines()
 #  git@gitlab.com:hipproperty/jailbreak.git
 remoteUrl = remotes[0].split()[1]
 
-print("We're gonna jailbreak '{}' to repo {}".format(args.dir, destRepo))
+gitBranch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], universal_newlines=True,
+                           stdout=subprocess.PIPE)
+currentBranch = gitBranch.stdout.rstrip()
+
+print("We're gonna jailbreak '{}' to repo {} on branch {}".format(args.dir, destRepo, currentBranch))
 response = input("Press enter to confirm, or cancel to abort")
 
 tempDir = tempfile.mkdtemp()
 
 print("Cloning " + remoteUrl + " to " + tempDir)
-subprocess.run(["git", "clone", remoteUrl, tempDir], universal_newlines=True, stdout=subprocess.PIPE)
-os.chdir(tempDir)
+subprocess.run(["git", "clone", remoteUrl, tempDir], universal_newlines=True, stdout=subprocess.PIPE).check_returncode()
 
 print("Removing original origin remote")
-subprocess.run(["git", "remote", "remove", "origin"])
+subprocess.run(["git", "remote", "remove", "origin"], cwd=tempDir).check_returncode()
 print("Pruning")
-subprocess.run(["git", "filter-branch", "--prune-empty", "--subdirectory-filter " + args.dir])
-print("Adding upstream remote of " + remoteUrl)
-subprocess.run(["git", "remote", "add", "origin", remoteUrl])
-
-# ... do stuff with dirpath
-# shutil.rmtree(dirpath)
+subprocess.run(["git", "filter-branch", "--prune-empty", "--subdirectory-filter", args.dir], cwd=tempDir).check_returncode()
+print("Adding upstream remote of " + destRepo)
+subprocess.run(["git", "remote", "add", "origin", destRepo], cwd=tempDir).check_returncode()
+print("Pushing to " + destRepo)
+subprocess.run(["git", "push", "-u", "origin", currentBranch], cwd=tempDir).check_returncode()
+print("Cleaning up")
+shutil.rmtree(tempDir)
